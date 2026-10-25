@@ -1,19 +1,33 @@
 #include "backend.h"
+#include "child_supervisor.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
-static int backend_run_pipeline(const BackendOps *backend, void *ctx)
+static int backend_run_pipeline(const BackendOps *backend, void *ctx,
+	VencConfig *cfg)
 {
 	int ret;
+	ChildSupervisor *supervisor = NULL;
+	struct stat child_config_stat;
 
 	ret = backend->init(ctx);
 	if (ret != 0) {
 		backend->teardown(ctx);
 		return ret;
 	}
+	if (cfg && strncmp(cfg->outgoing.server, "frame-shm://", 12) == 0 &&
+	    stat(CHILD_SUPERVISOR_CONFIG_PATH, &child_config_stat) == 0 &&
+	    S_ISREG(child_config_stat.st_mode) &&
+	    child_supervisor_start(&supervisor, CHILD_SUPERVISOR_CONFIG_PATH,
+		cfg->outgoing.server) != 0)
+		fprintf(stderr, "[supervisor] disabled; encoder continues without child supervision\n");
 
 	ret = backend->run(ctx);
+	child_supervisor_stop(&supervisor);
 	backend->teardown(ctx);
 	return ret;
 }
@@ -50,7 +64,7 @@ int backend_execute(const BackendOps *backend, const VencConfig *cfg)
 
 	ret = backend->prepare(ctx);
 	if (ret == 0) {
-		ret = backend_run_pipeline(backend, ctx);
+		ret = backend_run_pipeline(backend, ctx, ctx_cfg);
 		if (backend->map_pipeline_result) {
 			ret = backend->map_pipeline_result(ret);
 		}

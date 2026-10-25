@@ -1,0 +1,26 @@
+{
+  "children": [
+    {
+      "name": "waybeam-link-tx",
+      "enabled": true,
+      "exec": "/usr/bin/waybeam-link",
+      "argv": [
+        "waybeam-link",
+        "tx",
+        "-c",
+        "/etc/waybeam-link/craft.json"
+      ],
+      "env": [
+        "LD_LIBRARY_PATH"
+      ],
+      "startAfter": "vfrm-ready",
+      "restart": "on-failure",
+      "restartBackoffMs": 500,
+      "restartBackoffMaxMs": 30000,
+      "restartLimit": 5,
+      "restartWindowSec": 300,
+      "stopSignal": "SIGTERM",
+      "stopTimeoutMs": 2000
+    }
+  ]
+}

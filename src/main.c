@@ -133,7 +133,9 @@ int main(int argc, char* argv[])
 	venc_config_defaults(&cfg);
 	if (venc_config_load(VENC_CONFIG_DEFAULT_PATH, &cfg) != 0)
 		return 1;
+  #if !HAVE_BACKEND_GK7205
 	venc_api_set_config_path(VENC_CONFIG_DEFAULT_PATH);
+  #endif
 
 	/* mDNS device beacon — announce-only, self-contained thread.  Makes
 	 * the encoder discoverable as _waybeam-venc._tcp independent of the

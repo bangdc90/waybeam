@@ -1,5 +1,7 @@
 #include "debug_osd.h"
 
+#include <stddef.h>
+
 /* ── CPU usage sampler (shared, /proc/stat) ────────────────────────────
  * Reports busy time as a percentage of TOTAL capacity across every core, so
  * 100% means every core saturated (unchanged from the original semantics).

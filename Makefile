@@ -38,6 +38,23 @@ CV610_SDK_INC ?= ../openhisilicon
 CV610_SDK_LIB ?= ../firmware/output/target/usr/lib
 CV610_CC_SUBMAKE := $(if $(findstring /,$(CV610_CC)),$(abspath $(CV610_CC)),$(CV610_CC))
 
+# GK7205V200 OpenIPC toolchain. The selected backend remains fail-closed until
+# a version-matched V200 media SDK and runtime implementation are available.
+GK7205_TOOLCHAIN_DIR ?= ../research/toolchain/toolchain.goke-gk7205v200
+GK7205_CC ?= $(GK7205_TOOLCHAIN_DIR)/bin/arm-linux-gcc
+GK7205_SDK_DIR ?= ../research/sdk/gk7205v300
+GK7205_LIB_DIR ?= ../research/firmware/general/package/goke-osdrv-gk7205v200/files/lib
+GK7205_MEDIA_SRC := ../research/venc/common.c \
+	../research/venc/compat.c \
+	../research/venc/isp_profiles.c ../research/venc/mipi_profiles.c \
+	../research/venc/vi_profiles.c \
+	$(GK7205_SDK_DIR)/sensor/imx307_2l_cmos.c \
+	$(GK7205_SDK_DIR)/sensor/imx307_2l_sensor_ctl.c
+GK7205_RUNTIME_SRC := src/main.c src/backend_gk7205.c src/backend.c \
+	src/child_supervisor.c src/venc_au.c src/venc_frame_ring.c \
+	src/venc_config.c src/mdns_beacon.c src/mdns_wire.c src/device_id.c \
+	src/venc_respawn.c lib/cJSON.c
+
 # Vendor PQ library, needed for isp.sensorBin and /api/v1/iq/export_bin on
 # CV610.  It is NOT in this repo: it is a third-party blob whose licensing is
 # the vendor's, so `make stage` copies it when the path resolves and says so
@@ -50,6 +67,9 @@ OBJ_DIR := $(OUT_DIR)/obj
 TARGET := $(OUT_DIR)/waybeam
 JSON_CLI_TARGET := $(OUT_DIR)/json_cli
 REGSCAN_TARGET := $(OUT_DIR)/regscan
+WAYBEAM_LINK_DIR ?= ../waybeam-link
+WAYBEAM_LINK_GK7205_BUILD := $(WAYBEAM_LINK_DIR)/build/gk7205v200-au
+WAYBEAM_LINK_GK7205_BINARY := $(WAYBEAM_LINK_GK7205_BUILD)/waybeam-link
 TIMING_PROBE_TARGET := rtp_timing_probe
 TIMING_PROBE_SRC := tools/rtp_timing_probe.c
 UNIX_CONSUMER_TARGET := $(OUT_DIR)/unix_dgram_consumer
@@ -74,7 +94,7 @@ VENC_VERSION := $(shell cat VERSION 2>/dev/null || echo unknown)
 # application silently mixes two struct stat/off_t layouts across a link.
 COMMON_CFLAGS := -Os -Iinclude -Ilib -DVENC_VERSION=\"$(VENC_VERSION)\" -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP
 CONFIG_SRC := src/venc_config.c src/venc_httpd.c src/venc_api.c src/venc_webui.c src/venc_recordings.c src/sensor_select.c src/venc_ring.c src/venc_frame_ring.c lib/cJSON.c
-HELPER_SRC := src/backend.c src/file_util.c src/h26x_util.c src/h26x_param_sets.c src/codec_config.c src/pipeline_common.c src/scene_detector.c src/sdk_quiet.c src/rtp_packetizer.c src/hevc_rtp.c src/intra_refresh.c src/frame_gate.c src/isp_runtime.c src/rtp_session.c src/stream_metrics.c src/rtp_sidecar.c src/output_socket.c src/timing.c src/idr_rate_limit.c src/debug_osd.c src/debug_osd_draw.c src/imu_bmi270.c src/audio_codec.c src/venc_jpeg.c src/venc_rec_writer.c src/venc_respawn.c src/mdns_wire.c src/mdns_beacon.c src/device_id.c src/framing_kalman.c src/attitude_est.c src/detect_wire.c
+HELPER_SRC := src/backend.c src/child_supervisor.c src/venc_au.c src/file_util.c src/h26x_util.c src/h26x_param_sets.c src/codec_config.c src/pipeline_common.c src/scene_detector.c src/sdk_quiet.c src/rtp_packetizer.c src/hevc_rtp.c src/intra_refresh.c src/frame_gate.c src/isp_runtime.c src/rtp_session.c src/stream_metrics.c src/rtp_sidecar.c src/output_socket.c src/timing.c src/idr_rate_limit.c src/debug_osd.c src/debug_osd_draw.c src/imu_bmi270.c src/audio_codec.c src/venc_jpeg.c src/venc_rec_writer.c src/venc_respawn.c src/mdns_wire.c src/mdns_beacon.c src/device_id.c src/framing_kalman.c src/attitude_est.c src/detect_wire.c
 MARUKO_ONLY_SRC := src/maruko_mi.c src/maruko_config.c src/maruko_video.c src/maruko_controls.c src/maruko_output.c src/maruko_pipeline.c src/maruko_runtime.c src/maruko_iq.c src/maruko_cus3a.c src/maruko_ts_recorder.c src/maruko_recorder.c src/maruko_audio.c src/maruko_jpeg.c src/maruko_stabfill_probe.c src/maruko_ipu_yolo.c src/maruko_scl_ports.c
 STAR6E_ONLY_SRC := src/star6e_output.c src/star6e_audio.c src/star6e_hevc_rtp.c src/star6e_video.c src/star6e_pipeline.c src/star6e_controls.c src/star6e_runtime.c src/star6e_cus3a.c src/star6e_iq.c src/star6e_jpeg.c src/star6e_ipu.c src/star6e_ipu_yolo.c src/star6e_vpe_ports.c src/star6e_luma_tap.c src/star6e_awb.c
 # Shared recorder core: the state machine, the TS mux and the contiguous-AU
@@ -91,6 +111,7 @@ CV610_SRC := src/main.c src/backend_cv610.c src/cv610_runtime.c \
 	src/cv610_pq_bin_load.c \
 	src/cv610_jpeg.c \
 	src/cv610_pipeline.c src/cv610_validation.c src/backend.c \
+	src/child_supervisor.c src/venc_au.c \
 	src/venc_config.c src/venc_httpd.c src/venc_api.c src/venc_webui.c \
 	src/venc_jpeg.c src/venc_rec_writer.c $(RECORDER_SRC) \
 	src/venc_recordings.c src/codec_config.c src/pipeline_common.c \
@@ -180,24 +201,44 @@ SOC_LIBS := -lss_mpi -lss_mpi_isp -lss_mpi_ae -lss_mpi_awb \
 BASE_LIBS := -Wl,--start-group -lpthread -ldl -lrt -Wl,--end-group
 BUILD_TESTS := 0
 TOOLCHAIN_TARGET := cv610-sdk
+else ifeq ($(SOC_BUILD),gk7205v200)
+CC := $(GK7205_CC)
+SRC := $(GK7205_RUNTIME_SRC) $(GK7205_MEDIA_SRC)
+DRV := $(GK7205_LIB_DIR)
+DRV_EXTRA :=
+SOC_CFLAGS := -mcpu=cortex-a7 -mfloat-abi=soft \
+	-I$(GK7205_SDK_DIR)/include -I$(GK7205_SDK_DIR)/sensor \
+	-I../research/venc
+SOC_DEFS := -DPLATFORM_GK7205=1 -DHAVE_BACKEND_GK7205=1
+SOC_LDFLAGS :=
+SOC_LIBS := -lhi_mpi -lhi_isp -lhi_ae -lhi_awb -lgk_api -lgk_isp \
+	-lgk_ae -lgk_awb -ldehaze -ldrc -lldci -lir_auto -ldnvqe \
+	-lupvqe -lvoice_engine -lsecurec -lm
+BASE_LIBS := -Wl,--start-group -lpthread -ldl -lrt -Wl,--end-group
+BUILD_TESTS := 0
+TOOLCHAIN_TARGET := gk7205-toolchain
 else
-$(error Unsupported SOC_BUILD '$(SOC_BUILD)'; expected 'star6e', 'maruko', or 'cv610')
+$(error Unsupported SOC_BUILD '$(SOC_BUILD)'; expected 'star6e', 'maruko', 'cv610', or 'gk7205v200')
 endif
 
 CFLAGS += $(COMMON_CFLAGS) $(SOC_CFLAGS) $(SOC_DEFS)
 LDFLAGS += $(COMMON_LDFLAGS) $(SOC_LDFLAGS)
 
-.PHONY: help all build lint stage clean toolchain toolchain-maruko toolchain-cv610 cv610-sdk sensor-cv610 ksrc-maruko \
+.PHONY: help all build lint stage clean toolchain toolchain-maruko toolchain-cv610 cv610-sdk gk7205-toolchain sensor-cv610 ksrc-maruko \
         drivers-maruko ksrc-star6e drivers-star6e maruko-pull maruko-deploy maruko-full json_cli regscan \
         remote-test verify pre-pr \
         check check-soc-stamp print-config test test-werror test-asan test-tsan test-ci \
-        qr-decode unix-dgram-consumer qr-test-host qr-test-cli qr-test-extended qr-test-phone webui webui-check
+		qr-decode unix-dgram-consumer qr-test-host qr-test-cli qr-test-extended qr-test-phone webui webui-check \
+		waybeam-link-gk7205-build waybeam-link-gk7205-stage
 
 help:
 	@echo "Targets:"
 	@echo "  make build       Build standalone binaries (default, SOC_BUILD=star6e)"
 	@echo "  make build SOC_BUILD=maruko"
 	@echo "  make build SOC_BUILD=cv610 CV610_CC=... CV610_SDK_INC=... CV610_SDK_LIB=..."
+	@echo "  make build SOC_BUILD=gk7205v200  Build the GK7205V200 IMX307 media backend"
+	@echo "  make waybeam-link-gk7205-build  Cross-build the RTL8812AU vehicle TX daemon"
+	@echo "  make waybeam-link-gk7205-stage  Stage it under out/gk7205v200/"
 	@echo "  make lint        Fast warning check (-Wall -Werror, compile only)"
 	@echo "  make qr-decode   Build the freestanding QR decoder for SOC_BUILD"
 	@echo "  make unix-dgram-consumer Build the target-local unix:// RTP test consumer"
@@ -236,6 +277,14 @@ all: build
 
 build: $(TOOLCHAIN_TARGET) check check-soc-stamp | $(OUT_DIR)
 build: $(TARGET)
+
+waybeam-link-gk7205-build:
+	cmake --preset gk7205v200-au -S "$(WAYBEAM_LINK_DIR)"
+	cmake --build "$(WAYBEAM_LINK_GK7205_BUILD)" --target waybeam-link
+
+waybeam-link-gk7205-stage: waybeam-link-gk7205-build
+	@mkdir -p out/gk7205v200
+	cp -f "$(WAYBEAM_LINK_GK7205_BINARY)" out/gk7205v200/waybeam-link
 
 # Per-source object list — one .o per .c, deps tracked via .d files.
 # Maps both src/foo.c and lib/bar.c to $(OBJ_DIR)/src/foo.o, $(OBJ_DIR)/lib/bar.o.
@@ -450,6 +499,7 @@ TEST_SRCS    := tests/test_runner.c tests/test_venc_config.c \
                 tests/test_star6e_ts_recorder.c \
                 tests/test_idr_rate_limit.c \
                 tests/test_backend.c \
+				tests/test_child_supervisor.c \
                 tests/test_debug_osd.c \
                 tests/test_intra_refresh.c \
                 tests/test_frame_gate.c \
@@ -470,7 +520,7 @@ TEST_SRCS    := tests/test_runner.c tests/test_venc_config.c \
 TEST_LIB_SRCS := src/qr_scan.c tools/qr/waybeam_qr_format.c \
 	tools/qr/quirc/quirc.c tools/qr/quirc/decode.c \
 	tools/qr/quirc/identify.c tools/qr/quirc/version_db.c \
-	src/backend.c src/venc_config.c src/venc_api.c src/venc_httpd.c src/venc_webui.c src/venc_recordings.c src/sensor_select.c src/venc_ring.c src/venc_frame_ring.c src/file_util.c src/h26x_util.c src/h26x_param_sets.c src/intra_refresh.c src/frame_gate.c src/isp_runtime.c src/maruko_config.c src/maruko_video.c src/maruko_output.c src/codec_config.c src/pipeline_common.c src/cv610_pq_bin_load.c src/rtp_session.c src/sdk_quiet.c src/rtp_packetizer.c src/hevc_rtp.c src/star6e_hevc_rtp.c src/star6e_output.c src/star6e_audio.c src/audio_codec.c src/star6e_video.c src/star6e_recorder.c src/star6e_ts_recorder.c src/ts_mux.c src/venc_rec_writer.c src/rtp_sidecar.c src/stream_metrics.c src/output_socket.c src/timing.c src/idr_rate_limit.c src/debug_osd_draw.c src/venc_jpeg.c src/mdns_wire.c src/mdns_beacon.c src/device_id.c src/framing_kalman.c src/attitude_est.c src/detect_dequant.c src/detect_wire.c src/star6e_vpe_ports.c src/maruko_scl_ports.c lib/cJSON.c
+		 src/backend.c src/child_supervisor.c src/venc_au.c src/venc_config.c src/venc_api.c src/venc_httpd.c src/venc_webui.c src/venc_recordings.c src/sensor_select.c src/venc_ring.c src/venc_frame_ring.c src/file_util.c src/h26x_util.c src/h26x_param_sets.c src/intra_refresh.c src/frame_gate.c src/isp_runtime.c src/maruko_config.c src/maruko_video.c src/maruko_output.c src/codec_config.c src/pipeline_common.c src/cv610_pq_bin_load.c src/rtp_session.c src/sdk_quiet.c src/rtp_packetizer.c src/hevc_rtp.c src/star6e_hevc_rtp.c src/star6e_output.c src/star6e_audio.c src/audio_codec.c src/star6e_video.c src/star6e_recorder.c src/star6e_ts_recorder.c src/ts_mux.c src/venc_rec_writer.c src/rtp_sidecar.c src/stream_metrics.c src/output_socket.c src/timing.c src/idr_rate_limit.c src/debug_osd_draw.c src/venc_jpeg.c src/mdns_wire.c src/mdns_beacon.c src/device_id.c src/framing_kalman.c src/attitude_est.c src/detect_dequant.c src/detect_wire.c src/star6e_vpe_ports.c src/maruko_scl_ports.c lib/cJSON.c
 
 # Every header the test oracles can reach, not a hand-picked list.  They build
 # as one compiler invocation each, so there are no .d files to drive this the
@@ -603,6 +653,9 @@ toolchain-cv610:
 		tar -xf "$(TOOLCHAIN_CV610_TGZ)" -C "$(TOOLCHAIN_CV610_DIR)" --strip-components=1; \
 		rm -f "$(TOOLCHAIN_CV610_TGZ)"; \
 	fi
+
+gk7205-toolchain:
+	@test -x "$(GK7205_CC)" || { echo "GK7205 compiler missing: $(GK7205_CC)"; exit 1; }
 
 cv610-sdk: toolchain-cv610
 	@command -v "$(CV610_CC)" >/dev/null 2>&1 || { \
